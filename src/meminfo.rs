@@ -1,4 +1,4 @@
-
+#[derive(Debug, PartialEq)]
 pub struct MemoryStats {
     pub total: u64, 
     pub free: Option<u64>,
