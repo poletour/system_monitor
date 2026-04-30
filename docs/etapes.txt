@@ -1,0 +1,171 @@
+1. D’abord: ajouter un filet de sécurité avec des tests
+
+C’est la première étape que je trouve la plus rentable avant un gros refactor.
+
+Pourquoi :
+
+ton parser /proc/meminfo est déjà une brique autonome ;
+si tu refactorises sans tests, tu risques de casser un détail sans t’en rendre compte ;
+dans un contexte stage, c’est exactement le genre de réflexe sain qu’on veut.
+
+Ce que tu devrais tester en priorité dans meminfo.rs :
+
+cas nominal : MemTotal, MemFree, MemAvailable présents ;
+cas partiel : MemAvailable absent mais MemTotal présent ;
+cas erreur : MemTotal absent, donc MissingMemTotal ;
+cas entrée sale : lignes non pertinentes, espaces variables, etc.
+
+Le but n’est pas d’avoir 25 tests. Même 3 à 5 bons tests suffisent pour sécuriser la suite.
+
+2. Extraire le parsing CLI dans config.rs
+
+Actuellement, parse_args vit dans main.rs et retourne directement un Duration. Ça fonctionne, mais conceptuellement ce n’est pas idéal. main devient vite le dépotoir naturel si on ne coupe pas tôt.
+
+La meilleure étape suivante serait de créer quelque chose du genre :
+
+une structure Config
+un champ interval: Duration
+éventuellement plus tard log_level
+
+L’idée n’est pas juste “déplacer une fonction”. L’idée est de faire en sorte que :
+
+main.rs charge la config ;
+monitor reçoive une config déjà validée ;
+le parsing CLI ne soit plus mélangé avec la logique d’exécution.
+
+Autrement dit, on veut passer de :
+
+“main comprend tout”
+à
+“main assemble les briques”.
+
+C’est une différence très importante en projet réel.
+
+3. Séparer la lecture système de la logique de parsing
+
+En ce moment, dans la boucle, tu fais :
+
+read_to_string("/proc/meminfo")
+puis parse_meminfo(&content) dans main.rs.
+
+Le mieux serait de créer un module system.rs qui aurait une responsabilité claire, par exemple :
+
+lire /proc/meminfo
+retourner des MemoryStats
+convertir les erreurs de lecture/parsing en erreurs propres à ton module
+
+Pourquoi c’est mieux :
+
+meminfo.rs devient un parser pur ;
+system.rs devient l’adaptateur Linux ;
+tu distingues enfin “lire une source système” de “interpréter son contenu”.
+
+C’est exactement le genre de séparation qu’on aime dans un daemon ou un agent Edge.
+
+4. Introduire une vraie structure Monitor
+
+Ça, c’est probablement le plus gros saut de qualité.
+
+Aujourd’hui, la boucle infinie est directement dans main.
+Ce que je ferais ensuite, c’est créer monitor.rs avec une structure du genre :
+
+Monitor
+interval
+une méthode run()
+éventuellement une méthode collect_once()
+
+Pourquoi c’est important :
+
+tu fais apparaître explicitement le cœur du programme ;
+tu sépares le cycle de vie du programme de sa configuration ;
+tu prépares le terrain pour le logging, les métriques HTTP, un watchdog, ou un arrêt propre plus tard.
+
+En gros, ton exécutable cesse d’être “un main avec une boucle” et devient “un moniteur qui tourne”.
+
+Et ça, psychologiquement et architecturalement, c’est déjà beaucoup plus proche d’un vrai service.
+
+5. Ajouter metrics.rs pour préparer la suite
+
+Même si pour l’instant tu n’as que la mémoire, ça vaut la peine d’introduire une structure de métriques plus “produit” que MemoryStats.
+
+Par exemple :
+
+MemoryStats reste lié à /proc/meminfo
+SystemMetrics représente ce que ton agent expose ou journalise
+
+Exemple conceptuel :
+
+memory_total_kb
+memory_free_kb
+memory_available_kb
+
+Pourquoi ne pas garder juste MemoryStats partout ?
+Parce qu’à moyen terme, tu vas sûrement vouloir :
+
+CPU
+disque
+load average
+uptime
+santé générale
+
+Donc metrics.rs sert à éviter que ton modèle de données soit collé trop fortement à un seul fichier Linux.
+
+6. Ensuite seulement: logging propre
+
+Pour le moment, tu utilises println! et eprintln!, ce qui est normal au début.
+Mais la prochaine étape “professionnelle” après le refactor, c’est log + env_logger.
+
+Pourquoi je le mettrais après le refactor :
+
+sinon tu ajoutes de la plomberie avant d’avoir stabilisé la structure ;
+une fois Monitor en place, le logging devient naturel :
+démarrage
+collecte réussie
+erreur de lecture
+intervalle utilisé
+
+À ce moment-là, les logs auront aussi plus de sens qu’un simple println!.
+
+7. Puis, à plus moyen terme: clap, endpoint HTTP, service systemd
+
+Ça, je le mettrais dans un deuxième bloc, pas tout de suite.
+
+clap
+
+Très bien, mais ton parsing manuel actuel est encore assez petit et pédagogique. Le remplacer trop tôt te ferait perdre un peu l’apprentissage utile.
+
+endpoint HTTP
+
+Très intéressant, surtout pour exposer des métriques, mais il faut d’abord que ton cœur applicatif soit propre.
+
+systemd
+
+Très pertinent pour ton objectif stage, mais tu auras plus de valeur à le faire quand ton agent aura :
+
+une config claire,
+un logging propre,
+un exécutable dont la responsabilité est nette.
+L’ordre que je te recommande vraiment
+
+Si on veut être méthodique et intelligent, je te dirais :
+
+cargo fmt + petit ménage mineur
+tests sur parse_meminfo
+config.rs
+system.rs
+monitor.rs
+metrics.rs
+simplifier main.rs
+ajouter log + env_logger
+plus tard seulement : clap, endpoint HTTP, systemd
+À quoi devrait ressembler ton repo après ce refactor
+
+Quelque chose comme :
+
+main.rs : initialise config + lance monitor
+config.rs : parsing des arguments / config runtime
+monitor.rs : boucle principale
+system.rs : accès Linux /proc/...
+meminfo.rs : parsing spécifique de /proc/meminfo
+metrics.rs : structures de métriques exposables
+lib.rs : export propre des modules

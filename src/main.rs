@@ -1,19 +1,14 @@
 use std::fs; // Filesystem standard library
 use std::thread;
-use std::time::Duration;
-use std::env::Args;
-//use system_monitor::meminfo::MemoryStats;
+use system_monitor::config;
 
 
 fn main() {
    let mut args = std::env::args();
    let _program = args.next();
-   //let mut interval: Duration = Duration::from_secs(5);
 
-   let interval = match parse_args(args) {
-      Ok(interval) => { 
-         interval
-      }
+   let config = match config::parse_args(args) {
+      Ok(config) => config, 
       Err(msg) => {
          eprintln!("{}", msg);
          return;
@@ -50,45 +45,7 @@ fn main() {
         // Etape cruciale: sleep
         // Sans celle ci, la boucle tourne a 100% CPU usage et fait surchauffer la machine.
         // Un bon daemon passe 99% de sa vie en sleep.
-        thread::sleep(interval);
+        thread::sleep(config.interval);
    }
 }
 
-fn parse_args(mut args: Args) -> Result<Duration, &'static str> {
-      match args.next() {
-         Some(arg) if arg == "--interval" => {
-            if let Some(arg) = args.next() {
-               if let Ok(secs) = arg.parse::<u64>() {
-                  if secs > 0 {
-                     let interval: Duration = Duration::from_secs(secs);
-                     //Ok(interval)
-                     match args.next() {
-                        Some(_) => {
-                           Err("Argument en trop. Syntaxe attendue : --interval <nombre>")
-                        }
-                        None => {
-                           Ok(interval)
-                        }
-                     }
-                  }
-                  else {
-                     Err("L'intervalle doit être supérieur à 0.")
-                  }
-               }
-               else {
-                  Err("Erreur de parsing. Syntaxe attendue : --interval <nombre>")
-               }
-            }
-            else {
-               Err("Valeur manquante; syntaxe attendue : --interval <nombre>")
-            }
-         }
-         Some(_) => {
-            Err("Erreur de parsing. Syntaxe attendue : --interval <nombre>")
-         }
-         None => {
-            let interval: Duration = Duration::from_secs(5);
-            Ok(interval)
-         }
-   }
-}
