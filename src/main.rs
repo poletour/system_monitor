@@ -1,8 +1,6 @@
 use std::fs; // Filesystem standard library
 use std::thread;
 use system_monitor::config;
-use system_monitor::system;
-
 
 fn main() {
    let mut args = std::env::args();
@@ -45,4 +43,3 @@ fn main() {
         thread::sleep(config.interval);
    }
 }
-

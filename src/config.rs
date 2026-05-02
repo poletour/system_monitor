@@ -1,44 +1,64 @@
 use std::time::Duration;
 use std::env::Args;
+use std::fmt;
 
 pub struct Config {
     pub interval: Duration,
 }
 
-pub fn parse_args(mut args: Args) -> Result<Config, &'static str> {
+#[derive(Debug, PartialEq)]
+pub enum ConfigError {
+   MissingIntervalValue,
+   InvalidInterval(String),
+   IntervalMustBePositive,
+   UnexpectedArgument(String),
+}
+
+impl fmt::Display for ConfigError {
+   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+      match self {
+         ConfigError::MissingIntervalValue => {
+            write!(f, "Valeur manquante. Syntaxed attendue: --interval <nombre>")
+         }
+         ConfigError::InvalidInterval(value) => {
+            write!(f, "Intervalle invalide: '{value}'. Syntaxe attendue: --interval <nombre>")
+         }
+         ConfigError::IntervalMustBePositive => {
+            write!(f, "L<intervalle doit être supérieur à 0.")
+         }
+         ConfigError::UnexpectedArgument(arg) => {
+            write!(f, "Argument innatendu: '{arg}'. SYntaxe attendue: --interval <nombre>")
+         }
+      }
+   }
+}
+
+pub fn parse_args(mut args: Args) -> Result<Config, ConfigError> {
       match args.next() {
          Some(arg) if arg == "--interval" => {
-            if let Some(arg) = args.next() {
-               if let Ok(secs) = arg.parse::<u64>() {
-                  if secs > 0 {
-                     let interval: Duration = Duration::from_secs(secs);
-                     match args.next() {
-                        Some(_) => {
-                           Err("Argument en trop. Syntaxe attendue : --interval <nombre>")
-                        }
-                        None => {
-                           Ok(Config { interval })
-                        }
-                     }
-                  }
-                  else {
-                     Err("L'intervalle doit être supérieur à 0.")
-                  }
-               }
-               else {
-                  Err("Erreur de parsing. Syntaxe attendue : --interval <nombre>")
-               }
+            let value = args.next().ok_or(ConfigError::MissingIntervalValue)?;
+
+            let secs = value
+               .parse::<u64>()
+               .map_err(|_| ConfigError::InvalidInterval(value.clone()))?;
+
+            if secs == 0 {
+               return Err(ConfigError::IntervalMustBePositive);
             }
-            else {
-               Err("Valeur manquante; syntaxe attendue : --interval <nombre>")
+
+            if let Some(extra_arg) = args.next() {
+               return Err(ConfigError::UnexpectedArgument(extra_arg));
             }
+
+            Ok(Config {
+               interval: Duration::from_secs(secs),
+            })
          }
-         Some(_) => {
-            Err("Erreur de parsing. Syntaxe attendue : --interval <nombre>")
-         }
-         None => {
-            let interval: Duration = Duration::from_secs(5);
-            Ok(Config { interval })
-         }
-   }
+
+         Some(arg) => Err(ConfigError::UnexpectedArgument(arg)),
+
+         None => Ok(Config {
+            interval: Duration::from_secs(5),
+         }),
+      }
 }
