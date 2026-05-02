@@ -1,6 +1,7 @@
 use std::fs; // Filesystem standard library
 use std::thread;
 use system_monitor::config;
+use system_monitor::system;
 
 
 fn main() {
@@ -9,15 +10,14 @@ fn main() {
 
    let config = match config::parse_args(args) {
       Ok(config) => config, 
-      Err(msg) => {
-         eprintln!("{}", msg);
-         return;
+      Err(err) => {
+         eprintln!("Erreur: {err}");
+         std::process::exit(1);
       }
    };
 
    println!("Moniteur démarré...");
 
-   // boucle infinie Daemon
    loop{
         let content = fs::read_to_string("/proc/meminfo").unwrap_or_default();
 
@@ -42,9 +42,6 @@ fn main() {
             }
         }
 
-        // Etape cruciale: sleep
-        // Sans celle ci, la boucle tourne a 100% CPU usage et fait surchauffer la machine.
-        // Un bon daemon passe 99% de sa vie en sleep.
         thread::sleep(config.interval);
    }
 }

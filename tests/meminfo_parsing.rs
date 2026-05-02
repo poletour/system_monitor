@@ -1,4 +1,5 @@
 use system_monitor::meminfo::{MeminfoParseError, parse_meminfo};
+use system_monitor::system;
 
 #[test]
 fn parse_meminfo_valid_content() {
